@@ -1,0 +1,78 @@
+#include <ESP8266WiFi.h>
+
+const char* ssid = "Todd";
+const char* password = "todd1234";
+
+WiFiClient client;
+
+const int trigerPin = D3;
+const int echoPin = D2;
+
+long duration;
+String send = "-";
+
+float distanceCm;
+float distanceInch;
+
+//setup constants.
+#define SOUND_SPEED 0.034
+#define CM_TO_INCH 0.393701 
+
+void setup()
+{
+  pinMode(trigerPin, OUTPUT); // Sets the trigPin as an Output
+  pinMode(echoPin, INPUT); // Sets the echoPin as an Input
+  
+  //connects to WiFi
+  WiFi.begin(ssid, password);
+  Serial.begin(115200); // Starts the serial communication
+  
+  while (WiFi.status() != WL_CONNECTED) {
+ 
+    delay(1000);
+    Serial.print("Connecting..");
+ 
+  }
+
+  Serial.print("Connected!");
+}
+
+void loop(){
+
+  // Clears the trigPin thank you Github user aedawes
+  digitalWrite(trigerPin, LOW);
+  delayMicroseconds(2);
+  // Sets the trigPin on HIGH state for 10 micro seconds
+  digitalWrite(trigerPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigerPin, LOW);
+  // Reads the echoPin, returns the sound wave travel time in microseconds
+  duration = pulseIn(echoPin, HIGH);
+  // Calculate the distance
+  distanceCm = duration * SOUND_SPEED/2;
+
+  if(distanceCm > 50){
+    send = "/Off";
+  }
+  if(distanceCm > 40 && distanceCm <= 50){
+    send = "/Green";
+  }
+  if(distanceCm > 30 && distanceCm <= 40){
+    send = "/Yellow";
+  }
+  if(distanceCm > 10 && distanceCm <= 30){
+    send = "/Red";
+  }
+  if(distanceCm <= 10){
+    send = "/Blink";
+  }
+
+  
+  delay(250);
+
+  if(client.connect("192.168.31.13", 80)){
+    client.print(String("GET" ) + send + " HTTP/1.1\r\n" + "Host: " + "192.168.31.13"  + "\r\n" + "Connection: keep-alive\r\n\r\n");
+  }
+
+
+}
