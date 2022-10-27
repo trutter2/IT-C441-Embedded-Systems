@@ -1,0 +1,128 @@
+#include <ESP8266WiFi.h>
+#include <PubSubClient.h>
+#include <ArduinoMqttClient.h>
+
+//WiFi Credentials
+const char* ssid = "";
+const char* password = "12345";
+
+const char* mqttServer = "147.182.220.179";
+const int mqttPort = 1883;
+
+WiFiClient doorSwitchClient; //MQTT server name
+PubSubClient mqttClient(doorSwitchClient);
+
+int reed_switch = 12; //where the switch is connected to the D1 Mini
+int reed_status;
+int last_reed_status;
+
+// Check for Message received on define topic for MQTT Broker
+void callback(char* topic, byte* payload, unsigned int length) {
+  Serial.print("Message arrived [");
+  Serial.print(topic);
+  Serial.print("] ");
+  for (int i = 0; i < length; i++) {
+    Serial.print((char)payload[i]);
+  }
+  Serial.println();
+}
+
+void setup() {
+  // put your setup code here, to run once:
+  Serial.begin(115200);
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, HIGH);
+  pinMode(reed_switch, INPUT_PULLUP); //pullup is needed for when the magnet gets reconnected
+  reed_status = digitalRead(reed_switch);
+  last_reed_status = reed_status;
+
+  //connect to wifi
+  Serial.println();
+  Serial.println();
+  Serial.println("Connecting to... ");
+  Serial.println(ssid);
+
+  WiFi.mode(WIFI_STA);
+  WiFi.hostname("DoorSwitch");
+  WiFi.begin(ssid, password);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.println(".");
+  }
+  Serial.println("");
+  Serial.println("WiFi connected:");
+  Serial.println(WiFi.localIP());
+
+  //connect to the MQTT broker
+  connectMQTT(); //calls connection function down below
+
+  //blink onboard light to show that internet is connected
+  digitalWrite(LED_BUILTIN, LOW);
+  delay(100);
+  digitalWrite(LED_BUILTIN, HIGH);
+  delay(100);
+  digitalWrite(LED_BUILTIN, LOW);
+  delay(100);
+  digitalWrite(LED_BUILTIN, HIGH);
+  delay(100);
+
+  mqttClient.publish("GARAGE", "activated");
+  mqttClient.setCallback(callback);
+}
+
+
+
+void loop() {
+  
+  // put your main code here, to run repeatedly:
+  if (!mqttClient.connected()) {
+    Serial.println("MQTT was Unexpectedly Disconnected");
+    connectMQTT(); //reconnects if you get disconnected.
+    
+  }
+
+  //check if magnet is connected or not.
+  reed_status = digitalRead(reed_switch);
+  
+  //respond to change in magnet
+  if (reed_status == 0 && last_reed_status == 1) {
+    digitalWrite(LED_BUILTIN, LOW);
+    Serial.println("connected");
+    mqttClient.publish("GARAGE", "1");
+    last_reed_status = 0;
+  }
+  if (reed_status == 1 && last_reed_status == 0) {
+    digitalWrite(LED_BUILTIN, HIGH);
+    Serial.println("disconnected");
+    mqttClient.publish("GARAGE", "0");
+    last_reed_status = 1;
+  }
+  delay(10); //used so no random disconnects happen.
+}
+
+void connectMQTT() {
+  mqttClient.setServer(mqttServer, mqttPort); //creates the connection to the MQTT server
+  while(!mqttClient.connected()){
+    Serial.println("connecting to MQTT...");
+    if (mqttClient.connect("DoorSwitch")) {
+      Serial.println("Connected to MQTT");
+    } else {
+      Serial.print("failed... Re");
+      Serial.print(mqttClient.state());
+      delay(2000);
+    }
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
