@@ -1,0 +1,185 @@
+#include <ESP8266WiFi.h>
+#include <PubSubClient.h>
+
+int red = 15;
+int yellow = 13;
+int green = 12;
+int ledState = LOW;
+int touching = 0;
+String sendRoute = "";
+
+int blinkRed; 
+unsigned long beginningMillis; 
+
+unsigned long previousMillis = 0;        // will store last time LED was updated
+
+const long interval = 250;  
+
+ 
+const char* ssid = "RutterBunch";
+const char* password = "RuttRutt0426!";
+
+//MQTT settings
+const char* mqttServer = "147.182.220.179";
+const int mqttPort = 1883;
+char* garageTopic = "GARAGE";
+char* stoplightTopic = "STOPLIGHT";
+String macAddr = WiFi.macAddress();
+String host = "arduino-" + macAddr.substring(15); 
+
+//Start MQTT wifi settings. 
+WiFiClient wifiClient;
+PubSubClient mqttClient(wifiClient);  
+ 
+void setup() {
+  Serial.begin(9600);
+  delay(10);
+  blinkRed = 0; //we dont want auto going
+  // Turn lights off.
+  digitalWrite(green, LOW);
+  digitalWrite(yellow, LOW);
+  digitalWrite(red, LOW);
+ 
+  //setup LED's as outputs
+  pinMode(red, OUTPUT);
+  pinMode(green, OUTPUT);
+  pinMode(yellow, OUTPUT);
+  digitalWrite(red, LOW);
+  digitalWrite(green, LOW);
+  digitalWrite(yellow, LOW);
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, HIGH);
+ 
+  // Connect to WiFi network
+  Serial.println();
+  Serial.println();
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+ 
+  WiFi.mode(WIFI_STA);
+  WiFi.hostname("DoorSwitch");
+  WiFi.begin(ssid, password);
+ 
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("");
+  Serial.println("WiFi connected");
+  Serial.println(WiFi.localIP());
+
+  Serial.println("Connecting to MQTT Broker"); // Serial debug
+  mqttClient.setServer(mqttServer, mqttPort);   // Set up MQTT Connection Info
+  mqttClient.setCallback(callback);     // Function to call when new messages are received
+  mqttClient.connect(host.c_str());     // Connect to the broker with unique hostname
+  mqttClient.subscribe(garageTopic);       // Subscribe to the LED topic on the broker
+  mqttClient.subscribe(stoplightTopic);       // Subscribe to the LED topic on the broker
+  Serial.println(mqttClient.state());   // Show debug info about MQTT state  
+}
+ 
+void loop() {
+  mqttClient.loop();
+  
+  //setcurrentMillis to millis will use later
+  unsigned long currentMillis = millis();
+
+  
+    // Red Light
+    if (sendRoute == "RED") {
+      blinkRed = 0;
+      //turn on Red light
+      digitalWrite(red, HIGH);
+      digitalWrite(yellow, LOW);
+      digitalWrite(green, LOW);     
+    } 
+    //Yellow Light
+    if (sendRoute == "YELLOW") {
+      blinkRed = 0;
+      
+      //turn on Yellow Light
+      digitalWrite(yellow, HIGH);
+      digitalWrite(red, LOW);
+      digitalWrite(green, LOW);
+    }
+    //Green Light
+    if (sendRoute == "GREEN") {
+      blinkRed = 0;
+      
+      //turn on Green Light
+      digitalWrite(green, HIGH);
+      digitalWrite(red, LOW);
+      digitalWrite(yellow, LOW);
+    }
+    // All Off
+    if (sendRoute == "OFF"){
+      blinkRed = 0;
+      digitalWrite(red, LOW);
+      digitalWrite(green, LOW);
+      digitalWrite(yellow, LOW);    
+    }
+
+    
+    //Blink cycle. will run when to close. blinking once a second
+    if (sendRoute == "BLINK") {   
+      blinkRed = 1;      // Increment the auto number. If it was off (0) turn it on to 1 (green)
+      //Serial.println("Blinking Red");   
+    }
+    if (blinkRed > 0) {
+      if (currentMillis - previousMillis >= interval) {
+      // save the last time you blinked the LED
+      previousMillis = currentMillis;
+
+      // if the LED is off turn it on and vice-versa:
+      if (ledState == LOW) {
+        ledState = HIGH;
+      } else {
+        ledState = LOW;
+      }
+      digitalWrite(red, ledState);
+      }
+    }
+  
+
+}
+
+void callback(char* topicChar, byte* payload, unsigned int length) {
+  String topicNOW = (String)topicChar;     // Convert the char* to a String
+  String message = "";                  // Convert the byte* payload to String
+  // There won't be a null character to terminate, so we manually copy each character
+  for (int i = 0; i < length; i++) {    // For each character of the payload
+    message += (char)payload[i];        // append to the message string
+  }
+  if (message == "1" || message == "0"){
+    Serial.print("Message arrived [");    // Serial Debug
+    Serial.print(garageTopic);                  //Print the topic name [in brackets]
+    Serial.print("] ");                   //
+    Serial.println(message);              //    And the message
+  } else {
+    Serial.print("Message arrived [");    // Serial Debug
+    Serial.print(stoplightTopic);                  //Print the topic name [in brackets]
+    Serial.print("] ");                   //
+    Serial.println(message);              //    And the message
+  }
+  
+  // if garage is current topic
+  if (topicNOW == (String)garageTopic) {
+    //if the magnet is touching the sensor is ON
+    if(message == "TOUCHING" || message == "1"){
+      digitalWrite(LED_BUILTIN, LOW);
+      touching = 1;
+    } else {
+      digitalWrite(LED_BUILTIN, HIGH);
+      sendRoute = "OFF";
+      blinkRed = 0;
+      digitalWrite(red, LOW);
+      digitalWrite(green, LOW);
+      digitalWrite(yellow, LOW); 
+      touching = 0;
+    }
+  } 
+    if (topicNOW == (String)stoplightTopic) {
+    sendRoute = message;
+    
+    }
+  }
+
